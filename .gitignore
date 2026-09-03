@@ -1,1 +1,11 @@
-
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+*.log
+.DS_Store
+tfsa-dashboard-deploy.zip
