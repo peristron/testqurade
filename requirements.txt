@@ -1,1 +1,6 @@
-
+streamlit>=1.41,<2
+streamlit-authenticator>=0.3.3,<0.5
+pandas>=2.2,<3
+plotly>=5.24,<7
+requests>=2.32,<3
+yfinance>=0.2.54,<2
