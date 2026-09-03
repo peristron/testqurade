@@ -1,16 +1,16 @@
-# Questrade TFSA Research & Rebalancing Dashboard
+# Research & Rebalancing Dashboard
 
-An authenticated Streamlit Community Cloud app for reviewing a Questrade TFSA,
+An authenticated Streamlit Community Cloud app for reviewing and
 researching Canadian ETFs with one of five LLM providers, and preparing conservative
 whole-share limit orders. No trade is sent until the signed-in user selects it, accepts
 the confirmation, and clicks **Execute Selected Trades**.
 
-> This is not financial advice. You are solely responsible for every trade.
+> Not financial advice. You're solely responsible for every trade.
 
-## What is included
+## What's included
 
-- Read-only Questrade account, CAD balance, position, symbol, and quote access.
-- Questrade access-token refresh with the replacement refresh token retained in the
+- Read-only Brokerage account, CAD balance, position, symbol, and quote access.
+- Brokerage access-token refresh with the replacement refresh token retained in the
   current authenticated session.
 - Editable target allocations and CAD cash reserve (default `$200`).
 - Whole-share, CAD-listed (`.TO`) limit-order suggestions.
@@ -22,19 +22,19 @@ the confirmation, and clicks **Execute Selected Trades**.
 
 ## Important Questrade limitation
 
-Questrade's official scope table currently describes `POST accounts/:id/orders` as a
+QT's official scope table currently describes `POST accounts/:id/orders` as a
 **trade scope for partner developers only**. A personal API application may therefore
 be able to read the account but receive `401` or `403` when validating or placing an
 order. This app implements the documented limit-order endpoints, but it cannot grant
-your token a scope that Questrade has not issued. Confirm API trading eligibility with
+your token a scope that the Brokerage has not issued. Confirm API trading eligibility with
 Questrade before relying on the execution feature.
 
-Official references:
+Official references (using QT as an example):
 
-- [Questrade API authorization and scopes](https://www.questrade.com/api/documentation)
-- [Questrade order placement](https://www.questrade.com/api/documentation/rest-operations/order-calls/accounts-id-orders)
+- [QT API authorization and scopes](https://www.questrade.com/api/documentation)
+- [QT order placement](https://www.questrade.com/api/documentation/rest-operations/order-calls/accounts-id-orders)
 
-## Why a thin Questrade client
+## Why a thin Brokerage client
 
 The project uses a small `requests`-based client in `tfsa_dashboard/questrade.py`
 instead of `questrade-api`, `qtrade`, or `qt-api`. At review time, `qtrade` was the most
@@ -44,7 +44,7 @@ API covers account and market-data reads rather than documented order placement.
 ephemeral Streamlit Cloud, and its PyPI release is much older. The official REST surface
 needed here is small, and the thin client makes these safety-critical behaviours explicit:
 
-- use the API server returned by Questrade during token redemption;
+- use the API server returned by Brokerage during token redemption;
 - rotate the single-use refresh token in memory;
 - refresh an expired token for read requests;
 - never retry an order `POST` after a network timeout, because its outcome may be
@@ -104,20 +104,20 @@ Then run:
 streamlit run streamlit_app.py
 ```
 
-## Questrade refresh token
+## QT refresh token
 
-1. Sign in to Questrade and open the API Centre / personal applications area.
+1. Sign in to QT and open the API Centre / personal applications area.
 2. Create or select a personal API application and generate a manual refresh token.
 3. Copy the token immediately and place it under `[questrade]` in Streamlit secrets,
    or paste it into the password-style field in the app sidebar.
 4. Click **Connect / Refresh Questrade**.
 
-Questrade access tokens are short-lived. Redeeming a refresh token returns a replacement
+QT access tokens are short-lived. Redeeming a refresh token returns a replacement
 refresh token; the app keeps that replacement only in `st.session_state`. Streamlit
 Community Cloud storage is ephemeral, so an app restart can lose the latest replacement
 and make the original secret unusable. If reconnecting fails, generate a new manual
 refresh token in Questrade and paste it into the sidebar. Treat every Questrade token as
-a high-privilege secret and revoke it from Questrade if exposure is suspected.
+a high-privilege secret and revoke it from QT if exposure is suspected.
 
 ## LLM and search configuration
 
@@ -170,7 +170,7 @@ old provider key or Questrade token at its issuer.
 ## Rebalancing behaviour
 
 - Targets must total within `0.5%` of 100%; they are normalized after validation.
-- Purchases require both a `.TO` symbol and a Questrade `CAD` currency result.
+- Purchases require both a `.TO` symbol and a QT `CAD` currency result.
 - The calculation uses the lower of available CAD cash above the reserve and reported
   CAD buying power.
 - Expected sale proceeds never fund purchases in the same batch. Refresh after sells
@@ -182,7 +182,7 @@ old provider key or Questrade token at its issuer.
 - Existing non-`.TO` holdings appear in the overview but are never automatically sold.
 - The app does not deposit money and cannot exceed contribution room through a deposit.
 - Every execution batch refreshes balances and positions, validates quantities and cash,
-  checks that quotes are within 10% of proposed limits, and calls Questrade's impact
+  checks that quotes are within 10% of proposed limits, and calls QT's impact
   endpoint before submission.
 
 ## Tests
@@ -200,12 +200,12 @@ or symbol you are not prepared to place.
 
 ## Known limitations
 
-- Questrade may restrict trade scope to approved partner applications.
+- QT/Brokerage may restrict trade scope to approved partner applications.
 - The newest rotating refresh token exists only in the active Streamlit session.
-- Questrade-reported combined CAD equity is used as the allocation base; non-`.TO`
+- QT-reported combined CAD equity is used as the allocation base; non-`.TO`
   positions are not sold by the generator.
 - yfinance data can be delayed or incomplete and is research context, not an execution
-  quote. Questrade quotes are used for proposed orders.
+  quote. QT quotes are used for proposed orders.
 - Limit orders may not fill, may partially fill, and may incur commissions or ECN fees.
 - The session audit log disappears when the session ends unless manually downloaded.
 - No background or autonomous trading is implemented.
