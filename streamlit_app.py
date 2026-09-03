@@ -28,10 +28,8 @@ from tfsa_dashboard.portfolio import (
 )
 from tfsa_dashboard.questrade import QuestradeClient
 from tfsa_dashboard.rebalancer import (
-    SuggestedOrder,
     generate_rebalance_orders,
     normalize_targets,
-    validate_execution_batch,
 )
 from tfsa_dashboard.research_tools import ResearchTools, TOOL_SCHEMAS
 from tfsa_dashboard.search import TavilySearch, results_as_markdown, results_as_tool_payload
@@ -55,6 +53,18 @@ STARTER_TARGETS = pd.DataFrame(
         {"Symbol": "XUT.TO", "Target Weight %": 5.0},
     ]
 )
+
+READ_ONLY_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "Only the authenticated user can review and submit limit orders through the Rebalancer tab.",
+    "The app can only prepare suggested limit orders. The user must enter every order manually "
+    "through Questrade's official website or application.",
+)
+
+READ_ONLY_TOOL_SCHEMAS = [
+    schema
+    for schema in TOOL_SCHEMAS
+    if schema.get("function", {}).get("name") in {"get_historical_prices", "search_web"}
+]
 
 
 def _plain_dict(value: Any) -> dict[str, Any]:
@@ -288,7 +298,7 @@ def _sidebar(authenticator: stauth.Authenticate) -> str | None:
         else:
             provider = None
             st.warning("Configure at least one LLM API key to enable research chat.")
-        st.caption("All orders require a separate review and confirmation.")
+        st.caption("The app is read-only. Suggested orders must be entered manually in Questrade.")
     return provider
 
 
@@ -386,19 +396,23 @@ def _render_chat(provider: str | None) -> None:
                 for item in st.session_state.chat_history[-12:]
             ]
             messages = (
-                [{"role": "system", "content": SYSTEM_PROMPT}]
+                [{"role": "system", "content": READ_ONLY_SYSTEM_PROMPT}]
                 + context_messages
                 + clean_history
             )
             tools = ResearchTools(
-                broker=st.session_state.broker,
-                account_number=st.session_state.account_number,
-                portfolio_snapshot=_portfolio_snapshot(),
+                broker=None,
+                account_number=None,
+                portfolio_snapshot={},
                 web_search=web_search,
             )
             with st.spinner(f"Researching with {settings.label}..."):
                 result = run_research_agent(
-                    create_client(settings), messages, TOOL_SCHEMAS, tools, max_rounds=4
+                    create_client(settings),
+                    messages,
+                    READ_ONLY_TOOL_SCHEMAS,
+                    tools,
+                    max_rounds=4,
                 )
             st.markdown(result.text)
             if source_results:
@@ -429,28 +443,11 @@ def _render_chat(provider: str | None) -> None:
             st.error(str(exc))
 
 
-def _selected_orders(edited: pd.DataFrame) -> list[SuggestedOrder]:
-    selected = edited[edited["execute"] == True]  # noqa: E712 - pandas comparison
-    return [
-        SuggestedOrder(
-            execute=True,
-            action=str(row["action"]),
-            symbol=str(row["symbol"]),
-            symbol_id=int(row["symbol_id"]),
-            quantity=int(row["quantity"]),
-            limit_price=float(row["limit_price"]),
-            estimated_value=float(row["estimated_value"]),
-            reason=str(row["reason"]),
-        )
-        for _, row in selected.iterrows()
-    ]
-
-
 def _render_rebalancer() -> pd.DataFrame:
     st.subheader("On-Demand Rebalancer")
     st.caption(
         "Starter weights are examples, not recommendations. Only .TO purchases are allowed, and "
-        "sale proceeds are not used to fund same-batch purchases."
+        "sale proceeds are not used to fund same-batch purchases. The app never submits orders."
     )
     targets_frame = st.data_editor(
         STARTER_TARGETS,
@@ -520,125 +517,42 @@ def _render_rebalancer() -> pd.DataFrame:
     suggestions = st.session_state.suggestions
     if not suggestions:
         return targets_frame
-    st.markdown("#### Suggested limit orders")
+    st.markdown("#### Suggested manual limit orders")
     orders_frame = pd.DataFrame(suggestions)
-    edited_orders = st.data_editor(
-        orders_frame,
-        use_container_width=True,
-        hide_index=True,
-        disabled=[column for column in orders_frame.columns if column != "execute"],
-        column_config={
-            "execute": st.column_config.CheckboxColumn("Select", default=False),
+    manual_orders = orders_frame[
+        ["action", "symbol", "quantity", "limit_price", "estimated_value", "reason"]
+    ].rename(
+        columns={
             "action": "Action",
             "symbol": "Symbol",
-            "symbol_id": None,
-            "quantity": st.column_config.NumberColumn("Shares", format="%d"),
-            "limit_price": st.column_config.NumberColumn("Limit (CAD)", format="$%.2f"),
-            "estimated_value": st.column_config.NumberColumn("Est. value", format="$%.2f"),
+            "quantity": "Shares",
+            "limit_price": "Limit Price (CAD)",
+            "estimated_value": "Estimated Value (CAD)",
             "reason": "Reason",
+        }
+    )
+    st.dataframe(
+        manual_orders,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Shares": st.column_config.NumberColumn(format="%d"),
+            "Limit Price (CAD)": st.column_config.NumberColumn(format="$%.2f"),
+            "Estimated Value (CAD)": st.column_config.NumberColumn(format="$%.2f"),
         },
-        key=f"order_editor_{st.session_state.suggestion_key}",
     )
-    selected = _selected_orders(edited_orders)
-    selected_buys = sum(
-        order.quantity * order.limit_price for order in selected if order.action == "Buy"
+    st.warning(
+        "Review current prices and enter any chosen limit orders manually in Questrade. "
+        "Nothing in this dashboard can submit, modify, or cancel an order."
     )
-    st.caption(f"Selected: {len(selected)} order(s) · purchase value ${selected_buys:,.2f} CAD")
-    acknowledged = st.checkbox(
-        "I reviewed these exact limit orders and understand that clicking Execute sends them to Questrade.",
-        value=False,
-        key=f"ack_{st.session_state.suggestion_key}",
-    )
-    execute = st.button(
-        "Execute Selected Trades",
-        type="primary",
-        disabled=not acknowledged or not selected,
+    st.download_button(
+        "Download Suggested Orders (CSV)",
+        data=manual_orders.to_csv(index=False),
+        file_name=f"suggested-manual-orders-{datetime.now().date().isoformat()}.csv",
+        mime="text/csv",
         use_container_width=True,
     )
-    if execute:
-        _execute_orders(selected, float(cash_reserve))
     return targets_frame
-
-
-def _execute_orders(selected: list[SuggestedOrder], cash_reserve: float) -> None:
-    broker: QuestradeClient | None = st.session_state.broker
-    account_number = st.session_state.account_number
-    if broker is None or not account_number:
-        st.error("The Questrade session is not connected.")
-        return
-    try:
-        _refresh_portfolio(account_number)
-        portfolio = st.session_state.portfolio
-        holdings = holdings_for_rebalancer(portfolio["positions"])
-        balances = portfolio["balances"]
-        validate_execution_batch(
-            selected,
-            holdings=holdings,
-            cash_cad=balances["cash_cad"],
-            cash_reserve=cash_reserve,
-            buying_power_cad=balances["buying_power_cad"],
-        )
-        fresh_quotes = load_quotes(broker, [order.symbol for order in selected])
-        for order in selected:
-            quote = fresh_quotes[order.symbol]
-            if order.action == "Buy" and quote.currency != "CAD":
-                raise RebalanceError(f"Blocked non-CAD purchase: {order.symbol}.")
-            reference = quote.ask if order.action == "Buy" else quote.bid
-            if reference <= 0 or abs(order.limit_price - reference) / reference > 0.10:
-                raise RebalanceError(
-                    f"{order.symbol}'s quote moved too far from the proposed limit. Generate new orders."
-                )
-
-        # Validate every order with Questrade before placing the first one.
-        for order in selected:
-            broker.preview_limit_order(
-                account_number,
-                order.symbol_id,
-                order.action,
-                order.quantity,
-                order.limit_price,
-            )
-
-        submitted = []
-        for order in selected:
-            try:
-                response = broker.place_limit_order(
-                    account_number,
-                    order.symbol_id,
-                    order.action,
-                    order.quantity,
-                    order.limit_price,
-                )
-            except DashboardError as exc:
-                _audit(
-                    "order_batch_interrupted",
-                    {"submitted": submitted, "failed_symbol": order.symbol, "error": str(exc)},
-                )
-                st.error(
-                    f"Submission stopped at {order.symbol}: {exc} Check Questrade order history "
-                    "before attempting anything again."
-                )
-                break
-            order_id = response.get("orderId")
-            submitted.append(
-                {
-                    "order_id": order_id,
-                    "symbol": order.symbol,
-                    "action": order.action,
-                    "quantity": order.quantity,
-                    "limit_price": order.limit_price,
-                }
-            )
-            st.success(f"Submitted {order.action} {order.quantity} {order.symbol} · order {order_id}")
-        if submitted:
-            _audit("orders_submitted", {"orders": submitted})
-            st.session_state.suggestions = []
-            try:
-                _refresh_portfolio(account_number)
-            except DashboardError as exc:
-                st.warning(f"Orders were submitted, but the portfolio refresh failed: {exc}")
-    except DashboardError as exc:
-        st.error(str(exc))
 
 
 def _render_overview(targets_frame: pd.DataFrame) -> None:
@@ -716,7 +630,7 @@ def _render_audit() -> None:
     st.subheader("Session Audit Log")
     st.caption("Stored only in this authenticated Streamlit session. API keys and tokens are never logged.")
     if not st.session_state.audit_log:
-        st.info("No research suggestions or order events have been logged in this session.")
+        st.info("No research or rebalance events have been logged in this session.")
         return
     display_rows = [
         {
@@ -743,7 +657,10 @@ _initialize_state()
 provider_key = _sidebar(authenticator)
 
 st.title("TFSA Research & Rebalancing")
-st.warning("This is not financial advice. You are solely responsible for all trades.")
+st.warning(
+    "This is not financial advice. This dashboard is read-only and never submits orders. "
+    "You are solely responsible for manually entering and reviewing all trades in Questrade."
+)
 tab_chat, tab_rebalance, tab_overview, tab_audit = st.tabs(
     ["AI Research", "Rebalancer", "Portfolio", "Session Log"]
 )
