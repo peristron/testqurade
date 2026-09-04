@@ -53,9 +53,9 @@ class QuestradeClient:
         """Redeem the current single-use refresh token and retain its replacement."""
         with self._refresh_lock:
             try:
-                response = self._http.post(
+                response = self._http.get(
                     self.TOKEN_URL,
-                    data={"grant_type": "refresh_token", "refresh_token": self.refresh_token},
+                    params={"grant_type": "refresh_token", "refresh_token": self.refresh_token},
                     timeout=self.timeout,
                 )
             except requests.RequestException as exc:
