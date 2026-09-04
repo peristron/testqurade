@@ -49,7 +49,7 @@ def test_refresh_rotates_token_without_logging_it() -> None:
     assert client.refresh_token == "refresh-2"
     assert client.access_token == "access-2"
     assert client.expires_at > time.time()
-
+    assert client.api_server == "https://api.example/v1"
     assert len(session.token_requests) == 1
     url, request_kwargs = session.token_requests[0]
     assert url == QuestradeClient.TOKEN_URL
