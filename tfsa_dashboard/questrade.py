@@ -66,7 +66,10 @@ class QuestradeClient:
                 raise BrokerError("Questrade returned an incomplete token response.")
             self.access_token = str(payload["access_token"])
             self.refresh_token = str(payload["refresh_token"])
-            self.api_server = str(payload["api_server"]).rstrip("/")
+            api_server = str(payload["api_server"]).rstrip("/")
+            self.api_server = (
+                api_server if api_server.endswith("/v1") else f"{api_server}/v1"
+            )
             self.expires_at = time.time() + max(int(payload["expires_in"]) - 45, 1)
 
     def _ensure_token(self) -> None:
