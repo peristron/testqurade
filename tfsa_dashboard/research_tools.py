@@ -8,7 +8,6 @@ from .market_data import history_as_records
 from .questrade import QuestradeClient
 from .search import TavilySearch, results_as_tool_payload
 
-
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
