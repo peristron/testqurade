@@ -31,9 +31,12 @@ from tfsa_dashboard.rebalancer import (
     generate_rebalance_orders,
     normalize_targets,
 )
-from tfsa_dashboard.research_tools import ResearchTools, TOOL_SCHEMAS
-from tfsa_dashboard.search import TavilySearch, results_as_markdown, results_as_tool_payload
-
+from tfsa_dashboard.research_tools import TOOL_SCHEMAS, ResearchTools
+from tfsa_dashboard.search import (
+    TavilySearch,
+    results_as_markdown,
+    results_as_tool_payload,
+)
 
 st.set_page_config(
     page_title="TFSA Research & Rebalancing",
@@ -548,7 +551,9 @@ def _render_rebalancer() -> pd.DataFrame:
     st.download_button(
         "Download Suggested Orders (CSV)",
         data=manual_orders.to_csv(index=False),
-        file_name=f"suggested-manual-orders-{datetime.now().date().isoformat()}.csv",
+        file_name=(
+            f"suggested-manual-orders-{datetime.now(timezone.utc).date().isoformat()}.csv"
+        ),
         mime="text/csv",
         use_container_width=True,
     )
@@ -601,7 +606,10 @@ def _render_overview(targets_frame: pd.DataFrame) -> None:
         hole=0.48,
         color_discrete_sequence=px.colors.qualitative.Safe,
     )
-    chart.update_layout(margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Holding")
+    chart.update_layout(
+        margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        legend_title_text="Holding",
+    )
     st.plotly_chart(chart, use_container_width=True)
     non_cad_proxy = positions[~positions["symbol"].str.endswith(".TO")]
     if not non_cad_proxy.empty:
@@ -647,7 +655,7 @@ def _render_audit() -> None:
     st.download_button(
         "Download session log",
         data=json.dumps(st.session_state.audit_log, indent=2, default=str),
-        file_name=f"tfsa-session-log-{datetime.now().date().isoformat()}.json",
+        file_name=f"tfsa-session-log-{datetime.now(timezone.utc).date().isoformat()}.json",
         mime="application/json",
     )
 
