@@ -30,7 +30,7 @@ class FakeSession:
             {
                 "access_token": "access-2",
                 "refresh_token": "refresh-2",
-                "api_server": "https://api.example/v1",
+                "api_server": "https://api.example",
                 "expires_in": 1800,
             },
         )
