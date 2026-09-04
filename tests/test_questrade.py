@@ -20,11 +20,11 @@ class FakeResponse:
 
 class FakeSession:
     def __init__(self) -> None:
-        self.posts = []
+        self.token_requests = []
         self.requests = []
 
-    def post(self, url, **kwargs):
-        self.posts.append((url, kwargs))
+    def get(self, url, **kwargs):
+        self.token_requests.append((url, kwargs))
         return FakeResponse(
             200,
             {
@@ -43,10 +43,20 @@ class FakeSession:
 def test_refresh_rotates_token_without_logging_it() -> None:
     session = FakeSession()
     client = QuestradeClient("refresh-1", session=session)
+
     client.refresh_access_token()
+
     assert client.refresh_token == "refresh-2"
     assert client.access_token == "access-2"
     assert client.expires_at > time.time()
+
+    assert len(session.token_requests) == 1
+    url, request_kwargs = session.token_requests[0]
+    assert url == QuestradeClient.TOKEN_URL
+    assert request_kwargs["params"] == {
+        "grant_type": "refresh_token",
+        "refresh_token": "refresh-1",
+    }
 
 
 def test_order_payload_forces_limit_and_whole_shares() -> None:
