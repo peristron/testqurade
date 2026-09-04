@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -49,6 +50,43 @@ def _parse_arguments(value: Any) -> dict[str, Any]:
     return parsed
 
 
+def _message_content_as_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, default=str)
+
+
+def _strict_alternating_messages(
+    messages: list[dict[str, Any]], extra_system_content: str
+) -> list[dict[str, Any]]:
+    """Prepare Gemma-style history with one system message and alternating turns."""
+    system_parts: list[str] = []
+    conversation: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get("role", ""))
+        content = _message_content_as_text(message.get("content", ""))
+        if role == "system":
+            if content.strip():
+                system_parts.append(content.strip())
+            continue
+        if role not in {"user", "assistant"}:
+            role = "user"
+        if conversation and conversation[-1]["role"] == role:
+            conversation[-1]["content"] = (
+                f"{conversation[-1]['content']}\n\n{content}".strip()
+            )
+        else:
+            conversation.append({"role": role, "content": content})
+
+    if extra_system_content.strip():
+        system_parts.append(extra_system_content.strip())
+    prepared: list[dict[str, Any]] = []
+    if system_parts:
+        prepared.append({"role": "system", "content": "\n\n".join(system_parts)})
+    prepared.extend(conversation)
+    return prepared
+
+
 class BaseLLMClient(ABC):
     def __init__(self, settings: ProviderSettings, timeout: float = 45) -> None:
         self.settings = settings
@@ -65,18 +103,30 @@ class BaseLLMClient(ABC):
         raise NotImplementedError
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        try:
-            response = requests.post(
-                f"{self.settings.base_url}/{path.lstrip('/')}",
-                headers={
-                    "Authorization": f"Bearer {self.settings.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=self.timeout,
-            )
-        except requests.RequestException as exc:
-            raise ProviderError(f"Could not reach {self.settings.label}.") from exc
+        response: requests.Response | None = None
+        for attempt in range(2):
+            try:
+                response = requests.post(
+                    f"{self.settings.base_url}/{path.lstrip('/')}",
+                    headers={
+                        "Authorization": f"Bearer {self.settings.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=self.timeout,
+                )
+            except requests.RequestException as exc:
+                raise ProviderError(f"Could not reach {self.settings.label}.") from exc
+            if response.status_code != 429 or attempt == 1:
+                break
+            retry_header = response.headers.get("Retry-After", "")
+            try:
+                retry_delay = float(retry_header)
+            except (TypeError, ValueError):
+                retry_delay = 2.0
+            time.sleep(max(0.5, min(retry_delay, 5.0)))
+        if response is None:
+            raise ProviderError(f"Could not reach {self.settings.label}.")
         try:
             data = response.json()
         except ValueError as exc:
@@ -99,18 +149,17 @@ class OpenAICompatibleClient(BaseLLMClient):
     ) -> Completion:
         request_messages = list(messages)
         if tools and not self.settings.native_tools:
-            text_tool_instruction = {
-                "role": "system",
-                "content": (
-                    "You can request only the read-only tools in the JSON schemas below. When a "
-                    "tool is needed, respond with exactly one JSON object and no Markdown: "
-                    '{"tool_calls":[{"id":"call_1","name":"tool_name","arguments":{}}]}. '
-                    "You may request multiple calls. After TOOL_RESULT messages, either request "
-                    "another tool the same way or answer the user normally. Never invent a tool.\n"
-                    + json.dumps(tools)
-                ),
-            }
-            request_messages = [request_messages[0], text_tool_instruction] + request_messages[1:]
+            text_tool_instruction = (
+                "You can request only the read-only tools in the JSON schemas below. When a "
+                "tool is needed, respond with exactly one JSON object and no Markdown: "
+                '{"tool_calls":[{"id":"call_1","name":"tool_name","arguments":{}}]}. '
+                "You may request multiple calls. After TOOL_RESULT messages, either request "
+                "another tool the same way or answer the user normally. Never invent a tool.\n"
+                + json.dumps(tools)
+            )
+            request_messages = _strict_alternating_messages(
+                request_messages, text_tool_instruction
+            )
         payload: dict[str, Any] = {
             "model": self.settings.model,
             "messages": request_messages,
@@ -219,11 +268,15 @@ class CohereClient(BaseLLMClient):
         return Completion(text=text, tool_calls=calls, assistant_message=assistant_message)
 
     def tool_result_message(self, call_id: str, result: Any) -> dict[str, Any]:
-        document = result if isinstance(result, dict) else {"result": result}
         return {
             "role": "tool",
             "tool_call_id": call_id,
-            "content": [{"type": "document", "document": document}],
+            "content": [
+                {
+                    "type": "document",
+                    "document": {"data": json.dumps(result, default=str)},
+                }
+            ],
         }
 
 
