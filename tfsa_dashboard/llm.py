@@ -10,7 +10,7 @@ from typing import Any, Protocol
 import requests
 
 from .config import ProviderSettings
-from .errors import ProviderError
+from .errors import DashboardError, ProviderError
 
 
 @dataclass(frozen=True)
@@ -254,7 +254,7 @@ def run_research_agent(
             try:
                 result = executor.execute(call.name, call.arguments)
                 event = {"tool": call.name, "arguments": call.arguments, "result": result}
-            except Exception as exc:
+            except (DashboardError, TypeError, ValueError) as exc:
                 result = {"error": str(exc)}
                 event = {"tool": call.name, "arguments": call.arguments, "error": str(exc)}
             events.append(event)
