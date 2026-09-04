@@ -67,9 +67,7 @@ class QuestradeClient:
             self.access_token = str(payload["access_token"])
             self.refresh_token = str(payload["refresh_token"])
             api_server = str(payload["api_server"]).rstrip("/")
-            self.api_server = (
-                api_server if api_server.endswith("/v1") else f"{api_server}/v1"
-            )
+            self.api_server = api_server if api_server.endswith("/v1") else f"{api_server}/v1"
             self.expires_at = time.time() + max(int(payload["expires_in"]) - 45, 1)
 
     def _ensure_token(self) -> None:
@@ -153,7 +151,18 @@ class QuestradeClient:
             raise BrokerError(f"Questrade could not resolve symbol {normalized}.")
         symbol_id = int(exact["symbolId"])
         detailed = self._request("GET", f"symbols/{symbol_id}").get("symbols", [])
-        return detailed[0] if detailed else exact
+        resolved = dict(exact)
+        if detailed:
+            resolved.update(detailed[0])
+        detailed_currency = str(resolved.get("currency", "") or "").strip()
+        search_currency = str(exact.get("currency", "") or "").strip()
+        resolved["currency"] = (detailed_currency or search_currency).upper()
+        if not resolved["currency"]:
+            raise BrokerError(
+                f"Questrade returned no currency for {normalized}; "
+                "the symbol cannot be used safely for rebalancing."
+            )
+        return resolved
 
     def get_quotes(self, symbol_ids: list[int]) -> list[dict[str, Any]]:
         if not symbol_ids:
