@@ -669,6 +669,26 @@ st.warning(
     "This is not financial advice. This dashboard is read-only and never submits orders. "
     "You are solely responsible for manually entering and reviewing all trades in Questrade."
 )
+with st.expander("How to use this app", expanded=False):
+    st.markdown(
+        """
+1. **Connect Questrade:** Use the sidebar to enter a fresh manual refresh token, then select your
+   TFSA account. Questrade refresh tokens are single-use and rotate after a successful connection.
+2. **Research:** Choose a configured AI provider and use **AI Research** for portfolio questions,
+   Canadian market context, ETF history, and recent cited news.
+3. **Set targets:** In **Rebalancer**, edit the CAD-listed ETF targets so the weights total
+   approximately 100%, and set the minimum CAD cash reserve you want to keep.
+4. **Generate suggestions:** Review the proposed whole-share limit orders and download the CSV if
+   useful. The dashboard cannot submit, modify, or cancel orders.
+5. **Trade manually:** Recheck live prices, quantities, available cash, and account details before
+   entering any chosen order yourself through Questrade's official website or application.
+6. **Review and record:** Use **Portfolio** to compare current and target allocations, and
+   **Session Log** to review or download the current session's research and rebalance events.
+
+Never share or display API keys, passwords, or Questrade tokens. App sessions and broker data may
+be cleared when Streamlit restarts or sleeps.
+        """
+    )
 tab_chat, tab_rebalance, tab_overview, tab_audit = st.tabs(
     ["AI Research", "Rebalancer", "Portfolio", "Session Log"]
 )
