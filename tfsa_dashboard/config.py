@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import ConfigurationError
-
 
 SYSTEM_PROMPT = """You are a Canadian ETF investment expert focused on long-term tax-free growth inside a TFSA. Prefer CAD-listed ETFs. Never recommend instruments that trigger unnecessary currency conversion fees. Always prefer limit orders. Be conservative and transparent about risks. Mild preference for energy and telecommunications sector ETFs when generating ideas, all else equal.
 
