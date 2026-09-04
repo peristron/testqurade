@@ -9,7 +9,6 @@ import yfinance as yf
 
 from .errors import DashboardError
 
-
 ALLOWED_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y"}
 
 
